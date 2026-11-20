@@ -1,0 +1,182 @@
+zabbix_export:
+  version: '8.0'
+  template_groups:
+    - uuid: 846977d1dfed4968bc5f8bdb363285bc
+      name: 'Templates/Operating systems'
+  templates:
+    - uuid: 19aa2ef02d404e5cb2318bf82fcdd5c9
+      template: 'Linux lm-sensors by Zabbix agent 2'
+      name: 'Linux lm-sensors by Zabbix agent 2'
+      description: |
+        Temperatures, fan speeds and voltages from lm-sensors (sensors -j + jq) via Zabbix agent 2 UserParameters:
+        UserParameter=sensors.discovery,/etc/zabbix/scripts/discover_sensors.sh temp
+        UserParameter=sensors.fan.discovery,/etc/zabbix/scripts/discover_sensors.sh fan
+        UserParameter=sensors.voltage.discovery,/etc/zabbix/scripts/discover_sensors.sh in
+        UserParameter=sensor.value[*],/etc/zabbix/scripts/get_sensor_value.sh "$1" "$2"
+        UserParameter=sensor.fan[*],/etc/zabbix/scripts/get_sensor_value.sh "$1" "$2"
+        UserParameter=sensor.voltage[*],/etc/zabbix/scripts/get_sensor_value.sh "$1" "$2"
+      groups:
+        - name: 'Templates/Operating systems'
+      discovery_rules:
+        - uuid: 5491ca4fcc634118b018df42aca482bd
+          name: 'Fan discovery'
+          key: sensors.fan.discovery
+          delay: 1h
+          filter:
+            conditions:
+              - macro: '{#LABEL}'
+                value: '{$SENSOR.LABEL.NOT_MATCHES}'
+                operator: NOT_MATCHES_REGEX
+          description: 'Discovery of lm-sensors fan inputs (fanN_input). Macros: {#CHIP}, {#CHIPNAME}, {#LABEL}, {#SENSOR}.'
+          item_prototypes:
+            - uuid: 4a12042d655b4301ab8818b8e342c6c6
+              name: '{#CHIPNAME} {#LABEL}: Fan speed'
+              key: 'sensor.fan[{#CHIP},{#SENSOR}]'
+              value_type: FLOAT
+              units: RPM
+              description: 'lm-sensors: chip {#CHIP}, feature {#LABEL}, input {#SENSOR}.'
+              tags:
+                - tag: chip
+                  value: '{#CHIP}'
+                - tag: component
+                  value: fan
+              trigger_prototypes:
+                - uuid: a5e2829c2509426999999a7bbd44291e
+                  expression: 'max(/Linux lm-sensors by Zabbix agent 2/sensor.fan[{#CHIP},{#SENSOR}],5m)=0 and max(/Linux lm-sensors by Zabbix agent 2/sensor.fan[{#CHIP},{#SENSOR}],1d)>0'
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: 'min(/Linux lm-sensors by Zabbix agent 2/sensor.fan[{#CHIP},{#SENSOR}],5m)>0'
+                  name: '{#CHIPNAME} {#LABEL}: Fan has stopped'
+                  opdata: 'Current value: {ITEM.LASTVALUE1}'
+                  priority: AVERAGE
+                  description: 'The fan has reported 0 RPM for 5 minutes but was spinning during the last day. Fans that never spin (not connected) do not fire.'
+                  tags:
+                    - tag: scope
+                      value: availability
+        - uuid: b5b6b3a17bfd49bf8f487edde6ab27ae
+          name: 'Temperature sensors discovery'
+          key: sensors.discovery
+          delay: 1h
+          filter:
+            conditions:
+              - macro: '{#LABEL}'
+                value: '{$SENSOR.LABEL.NOT_MATCHES}'
+                operator: NOT_MATCHES_REGEX
+          description: 'Discovery of lm-sensors temperature inputs (tempN_input). Macros: {#CHIP}, {#CHIPNAME}, {#LABEL}, {#SENSOR}.'
+          item_prototypes:
+            - uuid: 73a25d67f785447bae0747168948196a
+              name: '{#CHIPNAME} {#LABEL}: Temperature'
+              key: 'sensor.value[{#CHIP},{#SENSOR}]'
+              value_type: FLOAT
+              units: °C
+              description: 'lm-sensors: chip {#CHIP}, feature {#LABEL}, input {#SENSOR}.'
+              tags:
+                - tag: chip
+                  value: '{#CHIP}'
+                - tag: component
+                  value: temperature
+              trigger_prototypes:
+                - uuid: 543b97b534154d248e40088ca28dea29
+                  expression: 'min(/Linux lm-sensors by Zabbix agent 2/sensor.value[{#CHIP},{#SENSOR}],5m)>{$SENSOR.TEMP.CRIT:"{#CHIP}"}'
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: 'max(/Linux lm-sensors by Zabbix agent 2/sensor.value[{#CHIP},{#SENSOR}],5m)<{$SENSOR.TEMP.CRIT:"{#CHIP}"}-3'
+                  name: '{#CHIPNAME} {#LABEL}: Temperature is above critical threshold'
+                  event_name: '{#CHIPNAME} {#LABEL}: Temperature is above critical threshold: >{$SENSOR.TEMP.CRIT:"{#CHIP}"}'
+                  opdata: 'Current value: {ITEM.LASTVALUE1}'
+                  priority: HIGH
+                  tags:
+                    - tag: scope
+                      value: availability
+                    - tag: scope
+                      value: performance
+                - uuid: c1fe9f99a4084cdb9e1c2a9fa8124f5c
+                  expression: 'min(/Linux lm-sensors by Zabbix agent 2/sensor.value[{#CHIP},{#SENSOR}],5m)>{$SENSOR.TEMP.WARN:"{#CHIP}"}'
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: 'max(/Linux lm-sensors by Zabbix agent 2/sensor.value[{#CHIP},{#SENSOR}],5m)<{$SENSOR.TEMP.WARN:"{#CHIP}"}-3'
+                  name: '{#CHIPNAME} {#LABEL}: Temperature is above warning threshold'
+                  event_name: '{#CHIPNAME} {#LABEL}: Temperature is above warning threshold: >{$SENSOR.TEMP.WARN:"{#CHIP}"}'
+                  opdata: 'Current value: {ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  dependencies:
+                    - name: '{#CHIPNAME} {#LABEL}: Temperature is above critical threshold'
+                      expression: 'min(/Linux lm-sensors by Zabbix agent 2/sensor.value[{#CHIP},{#SENSOR}],5m)>{$SENSOR.TEMP.CRIT:"{#CHIP}"}'
+                      recovery_expression: 'max(/Linux lm-sensors by Zabbix agent 2/sensor.value[{#CHIP},{#SENSOR}],5m)<{$SENSOR.TEMP.CRIT:"{#CHIP}"}-3'
+                  tags:
+                    - tag: scope
+                      value: availability
+                    - tag: scope
+                      value: performance
+        - uuid: 8a45bbe630af4a83ac3cb666e23d17f9
+          name: 'Voltage discovery'
+          key: sensors.voltage.discovery
+          delay: 1h
+          filter:
+            conditions:
+              - macro: '{#LABEL}'
+                value: '{$SENSOR.LABEL.NOT_MATCHES}'
+                operator: NOT_MATCHES_REGEX
+          description: 'Discovery of lm-sensors voltage inputs (inN_input). Macros: {#CHIP}, {#CHIPNAME}, {#LABEL}, {#SENSOR}.'
+          item_prototypes:
+            - uuid: 269ea92c28844ee480c321305bf1c796
+              name: '{#CHIPNAME} {#LABEL}: Voltage'
+              key: 'sensor.voltage[{#CHIP},{#SENSOR}]'
+              value_type: FLOAT
+              units: V
+              description: 'lm-sensors: chip {#CHIP}, feature {#LABEL}, input {#SENSOR}.'
+              tags:
+                - tag: chip
+                  value: '{#CHIP}'
+                - tag: component
+                  value: voltage
+              trigger_prototypes:
+                - uuid: f33ef95bf5ba4ec982af5e0ed38cf557
+                  expression: 'max(/Linux lm-sensors by Zabbix agent 2/sensor.voltage[{#CHIP},{#SENSOR}],5m)<{$SENSOR.VOLT.MIN:"{#LABEL}"} or min(/Linux lm-sensors by Zabbix agent 2/sensor.voltage[{#CHIP},{#SENSOR}],5m)>{$SENSOR.VOLT.MAX:"{#LABEL}"}'
+                  name: '{#CHIPNAME} {#LABEL}: Voltage is out of range'
+                  event_name: '{#CHIPNAME} {#LABEL}: Voltage is out of range ({$SENSOR.VOLT.MIN:"{#LABEL}"} - {$SENSOR.VOLT.MAX:"{#LABEL}"} V)'
+                  opdata: 'Current value: {ITEM.LASTVALUE1}'
+                  priority: AVERAGE
+                  description: 'Thresholds are set per label with context macros {$SENSOR.VOLT.MIN:"<label>"} / {$SENSOR.VOLT.MAX:"<label>"}. Labels without context (e.g. Vcore, in1) use -1000/1000, so the trigger never fires for them.'
+                  tags:
+                    - tag: scope
+                      value: availability
+      tags:
+        - tag: class
+          value: os
+        - tag: target
+          value: linux
+      macros:
+        - macro: '{$SENSOR.LABEL.NOT_MATCHES}'
+          value: '^PCH_(CHIP|CPU|MCH)_TEMP$'
+          description: 'Sensor labels to skip in all discoveries (regex). Default: unconnected PCH temperatures on Nuvoton NCT677x (0 °C).'
+        - macro: '{$SENSOR.TEMP.CRIT}'
+          value: '85'
+          description: 'Critical temperature threshold, °C. Context = chip, e.g. {$SENSOR.TEMP.CRIT:"acpitz-acpi-0"}.'
+        - macro: '{$SENSOR.TEMP.WARN}'
+          value: '80'
+          description: 'Warning temperature threshold, °C. Context = chip, e.g. {$SENSOR.TEMP.WARN:"coretemp-isa-0000"}.'
+        - macro: '{$SENSOR.VOLT.MAX}'
+          value: '1000'
+          description: 'Default max voltage (effectively disabled). Set per label with context, e.g. {$SENSOR.VOLT.MAX:"in1"}.'
+        - macro: '{$SENSOR.VOLT.MAX:regex:"^(\+?3\.3V(sb|SB)?|3VSB|AVCC|AVcc)$"}'
+          value: '3.465'
+          description: '3.3 V rails: +5%.'
+        - macro: '{$SENSOR.VOLT.MAX:regex:"^(\+?5V(sb|SB)?|5VSB)$"}'
+          value: '5.25'
+          description: '5 V rails: +5%.'
+        - macro: '{$SENSOR.VOLT.MAX:regex:"^\+?12V$"}'
+          value: '12.6'
+          description: '12 V rail: +5%.'
+        - macro: '{$SENSOR.VOLT.MIN}'
+          value: '-1000'
+          description: 'Default min voltage (effectively disabled). Set per label with context, e.g. {$SENSOR.VOLT.MIN:"in1"}.'
+        - macro: '{$SENSOR.VOLT.MIN:regex:"^(\+?3\.3V(sb|SB)?|3VSB|AVCC|AVcc)$"}'
+          value: '3.135'
+          description: '3.3 V rails: -5%.'
+        - macro: '{$SENSOR.VOLT.MIN:regex:"^(\+?5V(sb|SB)?|5VSB)$"}'
+          value: '4.75'
+          description: '5 V rails: -5%.'
+        - macro: '{$SENSOR.VOLT.MIN:regex:"^\+?12V$"}'
+          value: '11.4'
+          description: '12 V rail: -5%.'
+        - macro: '{$SENSOR.VOLT.MIN:regex:"^(Vbat|VBAT|Vbatt)$"}'
+          value: '2.8'
+          description: 'CMOS battery: low below 2.8 V.'
